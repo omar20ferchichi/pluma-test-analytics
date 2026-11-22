@@ -1,0 +1,280 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  projects  Project[]
+  members   Membership[]
+}
+
+model User {
+  id            String   @id
+  email         String   @unique
+  name          String
+  passwordHash  String
+  role          String   @default("qa")
+  createdAt     DateTime @default(now())
+  memberships   Membership[]
+  auditLogs     AuditLog[]
+}
+
+model Membership {
+  id        String       @id
+  userId    String
+  orgId     String
+  projectId String?
+  role      String       @default("qa")
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project   Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([orgId])
+}
+
+model Project {
+  id          String       @id
+  orgId       String
+  name        String
+  slug        String
+  description String       @default("")
+  createdAt   DateTime     @default(now())
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  executions  Execution[]
+  testCases   TestCase[]
+  testPoints  TestPoint[]
+  apiKeys     ApiKey[]
+  memberships Membership[]
+  qualityConfig QualityConfig?
+  jiraTickets JiraTicket[]
+
+  @@unique([orgId, slug])
+}
+
+model QualityConfig {
+  id        String  @id
+  projectId String  @unique
+  passRate  Float   @default(50)
+  criticalFailures Float @default(15)
+  regressions Float @default(15)
+  flakiness Float   @default(10)
+  performance Float @default(5)
+  coverage  Float   @default(5)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id         String    @id
+  projectId  String
+  name       String
+  prefix     String
+  hash       String
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Execution {
+  id             String    @id
+  projectId      String
+  sequentialId   Int
+  status         String    @default("ready")
+  sourceFormat   String    @default("unknown")
+  name           String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  durationMs     Int       @default(0)
+  browser        String?
+  environment    String?
+  branch         String?
+  commitSha      String?
+  pipeline       String?
+  ciProvider     String?
+  totalTests     Int       @default(0)
+  passed         Int       @default(0)
+  failed         Int       @default(0)
+  skipped        Int       @default(0)
+  flaky          Int       @default(0)
+  blocked        Int       @default(0)
+  passRate       Float     @default(0)
+  qualityScore   Float     @default(0)
+  archivedAt     DateTime?
+  validationJson String    @default("{}")
+  metadataJson   String    @default("{}")
+  rawJsonPath    String?
+  createdAt      DateTime  @default(now())
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  results        TestResult[]
+  logs           LogLine[]
+  artifacts      Artifact[]
+  failures       Failure[]
+  clusters       FailureClusterRow[]
+
+  @@unique([projectId, sequentialId])
+  @@index([projectId, createdAt])
+  @@index([projectId, archivedAt])
+}
+
+model TestCase {
+  id         String   @id
+  projectId  String
+  externalId String
+  name       String
+  ticketId   String?
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  results    TestResult[]
+  testPoints TestPoint[]
+
+  @@unique([projectId, externalId])
+}
+
+model TestPoint {
+  id          String   @id
+  projectId   String
+  externalId  String
+  description String
+  ticketId    String?
+  testCaseId  String?
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  testCase    TestCase? @relation(fields: [testCaseId], references: [id])
+  results     TestResult[]
+  logs        LogLine[]
+
+  @@unique([projectId, externalId])
+  @@index([projectId, ticketId])
+}
+
+model TestResult {
+  id                 String     @id
+  executionId        String
+  testPointId        String
+  testCaseId         String?
+  status             String
+  /// Description as run (TestPoints are parameterized: "Create task \"E2E-01\"")
+  description        String?
+  durationMs         Int        @default(0)
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  retries            Int        @default(0)
+  browser            String?
+  environment        String?
+  errorMessage       String?
+  stackTrace         String?
+  lastSuccessfulStep String?
+  failureCategory    String?
+  failureFingerprint String?
+  rawJson            String     @default("{}")
+  sortIndex          Int        @default(0)
+  execution          Execution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  testPoint          TestPoint  @relation(fields: [testPointId], references: [id], onDelete: Cascade)
+  testCase           TestCase?  @relation(fields: [testCaseId], references: [id])
+  artifacts          Artifact[]
+  logs               LogLine[]
+  failure            Failure?
+
+  @@index([executionId, sortIndex])
+  @@index([executionId, status])
+  @@index([testPointId, executionId])
+  @@index([failureFingerprint])
+  @@index([failureCategory])
+}
+
+model Failure {
+  id           String     @id
+  executionId  String
+  resultId     String     @unique
+  testPointId  String
+  category     String
+  fingerprint  String
+  message      String
+  stackTrace   String?
+  manualCategory String?
+  execution    Execution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  result       TestResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+
+  @@index([executionId, fingerprint])
+  @@index([category])
+}
+
+model FailureClusterRow {
+  id           String    @id
+  executionId  String
+  fingerprint  String
+  category     String
+  sampleMessage String
+  count        Int
+  testPointIds String
+  testCaseIds  String
+  execution    Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+}
+
+model LogLine {
+  id          String     @id
+  executionId String
+  resultId    String?
+  testPointId String?
+  lineNumber  Int
+  timestamp   DateTime?
+  level       String
+  message     String
+  stackTrace  String?
+  execution   Execution  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  result      TestResult? @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  testPoint   TestPoint? @relation(fields: [testPointId], references: [id])
+
+  @@index([executionId, lineNumber])
+  @@index([executionId, level])
+  @@index([testPointId])
+}
+
+model Artifact {
+  id          String      @id
+  executionId String
+  resultId    String?
+  kind        String
+  name        String
+  storagePath String
+  contentType String?
+  size        Int         @default(0)
+  testPointExternalId String?
+  execution   Execution   @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  result      TestResult? @relation(fields: [resultId], references: [id], onDelete: Cascade)
+
+  @@index([executionId, kind])
+}
+
+model JiraTicket {
+  id        String  @id
+  projectId String
+  key       String
+  summary   String?
+  url       String?
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, key])
+}
+
+model AuditLog {
+  id        String   @id
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metaJson  String   @default("{}")
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+}
