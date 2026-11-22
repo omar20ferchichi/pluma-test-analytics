@@ -93,7 +93,11 @@ function shareRecordingsWithAllPoints(testCase: NormalizedTestCase, recordings: 
 }
 
 /** Native TestCase JSON is the case tree. Playwright specs enrich it; they are not extra cases. */
-function attachPlaywrightToNative(native: NormalizedTestCase[], playwright: NormalizedTestCase[]): NormalizedTestCase[] {
+function attachPlaywrightToNative(
+  native: NormalizedTestCase[],
+  playwright: NormalizedTestCase[],
+  mergedInto: Map<string, string> = new Map(),
+): NormalizedTestCase[] {
   if (!native.length) return playwright;
   if (!playwright.length) return native;
   const used = new Set<string>();
@@ -101,6 +105,7 @@ function attachPlaywrightToNative(native: NormalizedTestCase[], playwright: Norm
     const match = pickPlaywrightMatch(testCase, playwright, used);
     if (!match) continue;
     used.add(match.id);
+    mergedInto.set(match.id, testCase.id);
     const byId = new Map(testCase.testPoints.map((point) => [point.id, point]));
     for (const point of match.testPoints) {
       const existing = byId.get(point.id);
@@ -133,10 +138,11 @@ function recordingPresent(artifactPath: string, packagePaths: string[]): boolean
 function bindArtifactsToCases(artifacts: NormalizedArtifact[], testCases: NormalizedTestCase[]) {
   for (const artifact of artifacts) {
     if (artifact.kind !== "video" && artifact.kind !== "trace") continue;
+    // TestCase first: TestPoint ids are shared between cases, so they can't identify the owner.
     const owner =
-      testCases.find((item) => item.testPoints.some((point) => point.id === artifact.testPointId)) ??
       testCases.find((item) => item.id === artifact.testCaseId) ??
       testCases.find((item) => item.id === matchCaseFromArtifactPath(artifact.path, testCases)) ??
+      testCases.find((item) => item.testPoints.some((point) => point.id === artifact.testPointId)) ??
       testCases.find((item) => item.id === bestSlugMatch(testCases.map((row) => row.id), artifact.path));
     if (!owner?.testPoints.length) continue;
     artifact.testCaseId = owner.id;
@@ -300,7 +306,17 @@ export function parseExecutionPackage(files: PackageFile[]): NormalizedExecution
   if (nativeDocs.length) {
     const native = parseNativeTestCaseDocuments(nativeDocs.map((item) => item.parsed));
     issues.push(...native.issues);
-    testCases = attachPlaywrightToNative(native.testCases, playwrightCases);
+    const mergedInto = new Map<string, string>();
+    testCases = attachPlaywrightToNative(native.testCases, playwrightCases, mergedInto);
+    // Playwright attachments (trace.zip, screenshots) still name the Playwright test; point them at
+    // the TestCase it was merged into so they bind to that case's TestPoint results.
+    artifacts = artifacts.map((artifact) => {
+      const target = artifact.testCaseId ? mergedInto.get(artifact.testCaseId) : undefined;
+      if (!target) return artifact;
+      const owner = testCases.find((item) => item.id === target);
+      const keepsPoint = owner?.testPoints.some((point) => point.id === artifact.testPointId);
+      return { ...artifact, testCaseId: target, testPointId: keepsPoint ? artifact.testPointId : owner?.testPoints[0]?.id };
+    });
     sourceFormat = playwrightFile ? "playwright-json+testcase-native" : "testcase-native";
     rawJson = nativeDocs.length === 1 ? nativeDocs[0]?.parsed : nativeDocs.map((item) => item.parsed);
   } else if (playwrightCases.length) {

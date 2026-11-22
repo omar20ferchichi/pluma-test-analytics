@@ -100,10 +100,9 @@ export async function importReportsDir(projectId: string, reportsDir = defaultRe
       result.skipped.push({ run: stamp, reason: "already imported" });
       continue;
     }
-    const hasResults = existsSync(path.join(runDir, "results.json"));
-    const hasCases = existsSync(path.join(runDir, "testcases")) && (await readdir(path.join(runDir, "testcases"))).length > 0;
-    if (!hasResults && !hasCases) {
-      result.skipped.push({ run: stamp, reason: "no results.json or testcases/" });
+    // results.json is written when the run ends; testcases/ fill up while it runs.
+    if (!existsSync(path.join(runDir, "results.json"))) {
+      result.skipped.push({ run: stamp, reason: "no results.json yet (run still in progress, or interrupted)" });
       continue;
     }
     const stats = (await readJson(path.join(runDir, "results.json")))?.stats as Record<string, number> | undefined;

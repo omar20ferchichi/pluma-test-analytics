@@ -136,7 +136,9 @@ export function parsePlaywrightJson(doc: unknown): {
       const duration = pickNumber(last as unknown as Record<string, unknown>, ["duration"]) ?? 0;
       const err = last.error ?? last.errors?.[0];
       const error = buildError(err?.message, err?.stack ?? last.error?.stack, last.error?.location);
-      const caseId = pickString(specRec, ["id"]) ?? `${file ?? "spec"}::${title}`;
+      // Readable id ("smoke › core pages load") instead of Playwright's spec hash.
+      const specName = (file ?? "spec").split("/").pop()!.replace(/\.(spec|test)\.[cm]?[jt]sx?$/i, "");
+      const caseId = `${specName} › ${title}`;
       const caseArtifacts = attachmentsOf(last, caseId);
 
       let points = extractPointsFromStdout(last, status === "failed" ? "passed" : status, browser);

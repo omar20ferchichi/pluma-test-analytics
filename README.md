@@ -103,6 +103,10 @@ npm run dev
 `../test_entretien/reports` (the suite checked out next to this repo). Point it elsewhere with
 `TEST_ENTRETIEN_REPORTS` in `backend/.env`. Without any reports the platform starts empty, and you can upload a run from **Import**.
 
+**Trace Viewer version.** A `trace.zip` opens only in a Trace Viewer at least as new as the Playwright that recorded it.
+The platform uses the viewer installed in `../test_entretien/node_modules` when it exists (so it always matches the suite),
+then the bundled copy in `backend/vendor` (Playwright 1.65.1). Set `TRACE_VIEWER_DIR` to use another one.
+
 > Change `JWT_SECRET` and the seeded passwords before exposing the platform outside your machine.
 
 ---
@@ -119,7 +123,7 @@ Each `npx playwright test` in the suite writes a new `reports/<YYYY-MM-DD_HH-MM-
 | **Import → Import package** | Upload a ZIP of one `reports/<timestamp>` folder (up to 3 GB) |
 | `POST /api/ingest/github` (also `gitlab`, `jenkins`) | Upload from CI with an API key ([docs/ci.md](docs/ci.md)) |
 
-Runs where nothing executed (`--list`, every test skipped) and folders with no results are skipped, and the reason is printed.
+Runs that haven't finished yet (no `results.json`), runs where nothing executed (`--list`, every test skipped) are skipped, and the reason is printed. Run the import again once a run is finished.
 
 ---
 
